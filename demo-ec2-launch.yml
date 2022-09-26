@@ -1,0 +1,84 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Launch Instance in an existing subnet of a VPC
+Parameters: 
+  ImageId:
+    Type: String
+    Description: 'Linux 2 AMI for ap-southeast-1 Region'
+    Default: 'ami-*****' # AMI ID (public images or priavte images from your account)
+  VpcId:
+    Type: String
+    Description: VPC id
+    Default: vpc-***** # Existing created VPC ID
+  SubnetId:
+    Type: String
+    Description: Subnet in which to launch an EC2
+    Default: subnet-****  # Existing created subnet ID
+  AvailabilityZone:
+    Type: String
+    Description: Availability Zone into which instance will launch
+    Default: ap-southeast-1a # Availability Zone
+  InstanceType:
+    Type: String
+    Description: Choosing  t2 micro because it is free
+    Default: t2.micro # Instance type
+  KeyName:
+    Description: SSH Keypair to login to the instance
+    Type: AWS::EC2::KeyPair::KeyName
+    Default: test-keypair # KeyPair Name
+
+Resources:
+  TestingInstance:
+    Type: 'AWS::EC2::Instance' 
+    Properties: # !Ref က အပေါ်က declare ခဲ့တဲ့ parameter ကိုပြန်ယူသုံးတာ referencing ပေါ့။ variable declare ပြီးသုံးသလိုပဲ။ 
+      ImageId: !Ref ImageId 
+      InstanceType: !Ref InstanceType 
+      AvailabilityZone: !Ref AvailabilityZone
+      KeyName: !Ref KeyName
+
+      IamInstanceProfile: SSMInstanceProfile # ဒါက ရှိပြီးသား IAM role ကို ကပ်ချင်သားကပ်လိုက်တာ။ Instance ဆောက်ရင် role မကပ်ချင်ရင် ဒီဟာ ဖြုတ်လိုက်လို့ရတယ်။ 
+      
+      # Public IP enable လုပ်မလားရွေးရတာပေါ့။ လုပ်မယ်ဆို True. Private network interface မို့ index 0,  နောက်ထပ် network interface တွေထည့်မယ်ဆို order အလိုက် 1,2,3 ဖြစ်မယ်။
+      NetworkInterfaces: 
+        - AssociatePublicIpAddress: "true" 
+          DeviceIndex: "0"
+          SubnetId: !Ref SubnetId 
+          GroupSet: 
+            - !Ref TestingSecurityGroup
+
+      # Instance ကို console က ဆောက်ရင် အောက်ဆုံးမှာ user dataထည့်လို့ရတယ်လေ။ On boot configuration ပေါ့။ ဒီမှာတော့ amazon linux 2 ပေါ်မှာ Apache httpd server သွင်းပြီး helloWorld run ထားတယ်။
+      UserData: 
+        Fn::Base64: 
+          !Sub |
+            #!/bin/bash
+            # Use this for your user data (script from top to bottom)
+            # install httpd (Linux 2 version)
+            yum update -y
+            sudo yum install -y httpd
+            sudo systemctl start httpd
+            sudo systemctl enable httpd
+            sudo echo "<h1>Hello World from Testing Server $(hostname -f)</h1>" > /var/www/html/index.html
+
+  # Security group inbound rules ထည့်တာ။ HTTP alllow all ပေးတာ INGRESS ထည့်ပြထားတယ်။ 
+  TestingSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      VpcId: !Ref VpcId
+      GroupDescription: SG to allow http and ssh access
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: '80'
+          ToPort: '80'
+          CidrIp: '0.0.0.0/0'
+      Tags:
+        - Key: Name
+          Value: Testing Security Group
+
+
+  # Static public IP လိုချင်ရင် EIP ကပ်ရမယ်။ အပေါ်မှာလည်း public ip enable ထားတော့ အဲ့တာနဲ့ အဆင်ပြေရင် ဒီဟာဖြုတ်လို့တော့ရတယ်။
+  TestingElasticIP:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc 
+      InstanceId: !Ref TestingInstance
+
+  
